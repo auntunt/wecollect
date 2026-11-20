@@ -52,24 +52,41 @@ function reset() {
   records = new Map(); receipts.clear(); picked.clear();
   el('toggle').textContent = '开启自动同步'; el('toggle').disabled = true;
   el('scope').textContent = '尚未选择文件夹'; el('sync').textContent = '尚未启用';
+  el('exportStatus').textContent = '';
   formats(); render();
 }
+function matchingRecords() {
+  const query = el('search').value.trim().toLowerCase();
+  const range = weekRange(el('period').value, new Date());
+  return [...records.values()].filter(record =>
+    (!range || (record.modified >= range.start && record.modified < range.end)) &&
+    (record.title + '\n' + record.content).toLowerCase().includes(query)
+  ).sort((a, b) => b.modified - a.modified || a.title.localeCompare(b.title));
+}
+
+function updateSelection(matches) {
+  for (const id of ['copy', 'weekly', 'handoff', 'clearPicks']) el(id).disabled = !picked.size;
+  el('selectMatches').disabled = !matches.some(record => !picked.has(record.title));
+  el('selection').textContent = '筛选结果 ' + matches.length + ' 份 · 共勾选 ' + picked.size + ' 份';
+}
+
 function render() {
   const container = el('records'); container.replaceChildren();
-  const q = el('search').value.trim().toLowerCase();
-  for (const r of records.values()) {
-    if (!(r.title+'\n'+r.content).toLowerCase().includes(q)) continue;
+  const matches = matchingRecords();
+  for (const r of matches) {
     const row = document.createElement('div'); row.className = 'record';
     const label = document.createElement('label'), check = document.createElement('input');
     check.type = 'checkbox'; check.checked = picked.has(r.title);
-    check.onchange = () => { if(check.checked) picked.add(r.title); else picked.delete(r.title); el('copy').disabled = !picked.size; };
+    check.onchange = () => { if(check.checked) picked.add(r.title); else picked.delete(r.title); updateSelection(matches); };
     label.append(check, ' '+r.title); row.append(label);
+    const date = document.createElement('small');
+    date.textContent = localDate(new Date(r.modified)); row.append(date);
     const detail = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
     summary.textContent = receipts.get(r.title)?.hash === r.hash ? '已归档 · 查看正文' : '本机预览';
     body.textContent = r.content; detail.append(summary,body); row.append(detail); container.append(row);
   }
   if (!container.children.length) container.textContent = records.size ? '没有匹配的记录' : '还没有可预览的工作记录';
-  el('copy').disabled = !picked.size;
+  updateSelection(matches);
 }
 async function identity() {
   if (localLauncher) throw Error('本机模式只在本设备读取资料。公司启用桌面接收端后，请打开公司工作台，登录并选择同步范围。');
@@ -101,7 +118,7 @@ async function scan() {
         if(!content.trim() || content.includes('\0')) throw Error('正文为空或包含非文本内容');
         const digest=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content));
         const hash=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
-        items.set(h.name,{title:h.name,content,hash});
+        items.set(h.name,{title:h.name,content,hash,modified:f.lastModified});
       } catch(e) { errors.push(h.name+'：'+e.message); }
     }
     if (revision!==rev) return;
@@ -136,6 +153,26 @@ el('choose').onclick=async()=>{
   catch(e){if(e.name!=='AbortError')el('scope').textContent=e.message;}
 };
 el('agent').onchange=reset;el('project').oninput=reset;el('search').oninput=render;
+el('period').onchange = render;
+el('selectMatches').onclick = () => {
+  for (const record of matchingRecords()) picked.add(record.title);
+  render();
+};
+el('clearPicks').onclick = () => { picked.clear(); render(); };
+for (const kind of ['weekly', 'handoff']) {
+  el(kind).onclick = () => {
+    const selected = [...picked].map(title => records.get(title));
+    const doc = exportDocument(kind, el('project').value.trim(), el('agent').value, selected);
+    downloadText(doc.name, doc.text, 'text/markdown;charset=utf-8');
+    el('exportStatus').textContent = doc.label + '已生成，包含 ' + selected.length + ' 份勾选记录。';
+  };
+}
+el('downloadReminder').onclick = () => {
+  const input = el('reminderTime');
+  if (!input.reportValidity()) return;
+  downloadText('WorkBuddy-每日签到.ics', reminderCalendar(input.value, new Date()), 'text/calendar;charset=utf-8');
+  el('reminderStatus').textContent = '请打开下载的 .ics 文件，并在日历中确认导入每日提醒。';
+};
 el('copy').onclick=async()=>{try{await navigator.clipboard.writeText([...picked].map(k=>k+'\n'+records.get(k).content).join('\n\n'));el('scope').textContent='已复制 '+picked.size+' 份完整正文';}catch{el('scope').textContent='剪贴板不可用，请展开记录后复制';}};
 el('toggle').onclick=async()=>{
   if(syncing){stopSync();return;}

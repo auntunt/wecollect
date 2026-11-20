@@ -3,8 +3,22 @@
 <body><main><nav><strong>WeCollect</strong><span id="account">本机工作台</span></nav><header><h1>我的 AI 工作记录</h1><p>搜索导出的工作会话，整理周报素材，按项目自动归档。</p></header>
 <section><h2>工作资料夹</h2><div class="form"><label>工具<select id="agent"><option>WorkBuddy</option><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>豆包工作</option><option>千问工作</option><option>其他 Agent</option></select></label><label>工作项目<input id="project" maxlength="100" placeholder="例如：客服知识库"></label><button id="choose">选择专用导出文件夹</button></div>
 <p id="format"></p><p>请选择只存放该工具、该项目非网关工作记录的文件夹。只读取第一层支持的文件，每份最多 1 MiB。走公司网关的记录已由网关归档。</p><output id="scope" aria-live="polite">尚未选择文件夹</output></section>
-<section><div class="row"><h2>搜索与摘录</h2><input id="search" type="search" aria-label="搜索工作记录" placeholder="搜索文件名或正文"></div><div id="records"></div><button id="copy" class="alt" disabled>复制勾选记录的完整正文</button></section>
+<section>
+  <div class="row"><h2>搜索与整理</h2><input id="search" type="search" aria-label="搜索工作记录" placeholder="搜索文件名或正文"></div>
+  <div class="actions"><label for="period">文件修改时间</label><select id="period"><option value="all">全部时间</option><option value="week">本周</option><option value="lastWeek">上周</option></select>
+    <button id="selectMatches" class="alt" disabled>勾选筛选结果</button><button id="clearPicks" class="alt" disabled>清空勾选</button></div>
+  <div id="records"></div>
+  <output id="selection"></output>
+  <div class="actions"><button id="weekly" disabled>导出周报素材</button><button id="handoff" class="alt" disabled>导出任务交接单</button><button id="copy" class="alt" disabled>复制勾选正文</button></div>
+  <output id="exportStatus" role="status"></output>
+</section>
+<section>
+  <details><summary><strong>WorkBuddy 签到提醒</strong></summary>
+  <p>选好时间，把提醒文件导入系统日历。日历会每天提醒你打开 WorkBuddy 完成签到。</p>
+  <div class="actions"><label for="reminderTime">每天</label><input id="reminderTime" type="time" value="09:00" required>
+    <button id="downloadReminder" class="alt">下载日历提醒</button></div><output id="reminderStatus" role="status"></output></details>
+</section>
 <section><div class="row"><h2>同步到 WeManage</h2><button id="toggle" disabled>开启自动同步</button></div><p>开启后，所选资料夹内已有和新增的工作记录都会发送，包括工具名、项目名、文件名和预览中的完整正文。公司 WeManage 保存记录并返回回执。关闭窗口即停止监听。</p><output id="sync" aria-live="polite">尚未启用</output><a id="company" hidden href="https://ai.cloudwaveai.cn/wemanager/wecollect/" target="_blank" rel="noopener">打开公司 WeManage 工作台</a><a id="login" hidden href="/api/auth/feishu/login?next=%2Fwemanager%2Fwecollect%2F">登录公司 WeManage</a></section>
 <section><div class="row"><h2>我的已归档记录</h2><input id="remoteQuery" maxlength="200" placeholder="跨工具搜索自己的归档" aria-label="搜索我的归档"><button class="alt" id="lookup">查询</button></div><output id="history" aria-live="polite"></output><button class="alt" hidden id="more">下一页</button></section>
 <dialog id="confirm"><h2>开启这个项目的同步？</h2><p id="disclosure"></p><p>之后每 20 秒检查一次文件夹。你可以随时暂停。已经存入公司的记录会保留。</p><button id="yes">确认开启</button> <button id="no" class="alt">取消</button></dialog>
-</main><script src="app.js"></script></body></html>
+</main><script src="exports.js"></script><script src="app.js"></script></body></html>
