@@ -78,11 +78,15 @@ function render() {
     const label = document.createElement('label'), check = document.createElement('input');
     check.type = 'checkbox'; check.checked = picked.has(r.title);
     check.onchange = () => { if(check.checked) picked.add(r.title); else picked.delete(r.title); updateSelection(matches); };
-    label.append(check, ' '+r.title); row.append(label);
+    const caption = document.createElement('span');
+    caption.textContent = r.id ? r.content.split('\n',2)[1] || r.title : r.title;
+    caption.title = r.title;
+    label.append(check, caption); row.append(label);
     const date = document.createElement('small');
     date.textContent = localDate(new Date(r.modified)); row.append(date);
     const detail = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
-    summary.textContent = receipts.get(r.title)?.hash === r.hash ? '已归档 · 查看正文' : '本机预览';
+    const archived = r.id ? r.archivedVersion === r.version : receipts.get(r.title)?.hash === r.hash;
+    summary.textContent = archived ? '已归档 · 查看正文' : '本机预览';
     body.textContent = r.content; detail.append(summary,body); row.append(detail); container.append(row);
   }
   if (!container.children.length) container.textContent = records.size ? '没有匹配的记录' : '还没有可预览的工作记录';
@@ -162,7 +166,7 @@ el('clearPicks').onclick = () => { picked.clear(); render(); };
 for (const kind of ['weekly', 'handoff']) {
   el(kind).onclick = () => {
     const selected = [...picked].map(title => records.get(title));
-    const doc = exportDocument(kind, el('project').value.trim(), el('agent').value, selected);
+    const doc = exportDocument(kind, activeScope?.group || el('project').value.trim(), activeScope?.agent || el('agent').value, selected);
     downloadText(doc.name, doc.text, 'text/markdown;charset=utf-8');
     el('exportStatus').textContent = doc.label + '已生成，包含 ' + selected.length + ' 份勾选记录。';
   };

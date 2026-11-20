@@ -2,10 +2,14 @@
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
-launcher = subprocess.Popen([sys.argv[1], '-no-open'], stdout=subprocess.PIPE, text=True)
+profile = tempfile.TemporaryDirectory()
+test_env = dict(os.environ, HOME=profile.name, USERPROFILE=profile.name, CODEX_HOME=profile.name + '/.codex',
+                CLAUDE_CONFIG_DIR=profile.name + '/.claude')
+launcher = subprocess.Popen([sys.argv[1], '-no-open'], stdout=subprocess.PIPE, text=True, env=test_env)
 try:
     origin = launcher.stdout.readline().strip()
     assert origin.startswith('http://127.0.0.1:')
@@ -32,9 +36,10 @@ try:
             for (const file of files) yield {name:file.name, kind:'file', getFile:async()=>file};
           }});
         }""")
+        page.click('#manual summary')
         page.fill('#project', '桌面助手')
         page.click('#choose')
-        page.wait_for_function("document.querySelectorAll('.record').length === 2")
+        expect(page.locator('.record')).to_have_count(2)
         page.select_option('#period', 'week')
         page.click('#selectMatches')
         assert page.locator('#selection').inner_text() == '筛选结果 1 份 · 共勾选 1 份'
@@ -73,3 +78,4 @@ try:
 finally:
     launcher.terminate()
     launcher.wait(timeout=5)
+    profile.cleanup()

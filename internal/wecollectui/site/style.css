@@ -3,3 +3,8 @@
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}
 .record small{display:inline-block;margin-left:12px;font-variant-numeric:tabular-nums}
 #selection{margin-top:8px}section>details>summary strong{font-size:18px}
+
+#nativeGroup{min-width:0;max-width:100%;text-overflow:ellipsis}
+#nativeIssues{overflow-wrap:anywhere;max-height:10em;overflow:auto}
+.record label{display:inline-flex;max-width:100%;align-items:baseline;gap:4px}
+.record label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

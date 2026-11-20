@@ -2,6 +2,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/auntunt/wecollect/internal/localsessions"
 	"github.com/auntunt/wecollect/internal/wecollectui"
 )
 
@@ -49,7 +53,22 @@ func main() {
 		log.Fatal(err)
 	}
 	host := l.Addr().String()
+	var secret [32]byte
+	rand.Read(secret[:])
+	key := hex.EncodeToString(secret[:])
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal("无法定位当前用户目录")
+	}
+	catalog := localsessions.New(home, os.Getenv("CODEX_HOME"), os.Getenv("CLAUDE_CONFIG_DIR"))
 	mux := http.NewServeMux()
+	mux.HandleFunc("/native/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-WeCollect-Local")), []byte(key)) != 1 {
+			http.Error(w, "无法访问本机记录", http.StatusForbidden)
+			return
+		}
+		catalog.ServeHTTP(w, r)
+	})
 	mux.Handle("/wecollect/", http.StripPrefix("/wecollect/", wecollectui.WeCollectFiles()))
 	mux.HandleFunc("/api/session", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "local workspace", http.StatusServiceUnavailable)
@@ -66,6 +85,8 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		mux.ServeHTTP(w, r)
 	}), ReadHeaderTimeout: 5 * time.Second}
@@ -79,8 +100,10 @@ func main() {
 			}
 		}
 	}()
-	url := fmt.Sprintf("http://%s/wecollect/?local=1", host)
-	fmt.Println(url)
+	url := fmt.Sprintf("http://%s/wecollect/?local=1#key=%s", host, key)
+	if len(os.Args) >= 2 && os.Args[1] == "-no-open" {
+		fmt.Println(url)
+	}
 	if len(os.Args) < 2 || os.Args[1] != "-no-open" {
 		if err = launch(url); err != nil {
 			log.Print(err)
