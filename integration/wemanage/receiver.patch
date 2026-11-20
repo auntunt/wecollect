@@ -1,0 +1,312 @@
+diff --git a/internal/wemanage/collect.go b/internal/wemanage/collect.go
+new file mode 100644
+index 0000000..77b75fb
+--- /dev/null
++++ b/internal/wemanage/collect.go
+@@ -0,0 +1,146 @@
++package wemanage
++
++import (
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"io"
++	"net/http"
++	"strconv"
++	"strings"
++	"time"
++	"unicode/utf8"
++
++	"github.com/jackc/pgx/v5"
++)
++
++const collectSchema = `
++CREATE TABLE IF NOT EXISTS wm_desktop_exports (
++ id bigserial PRIMARY KEY, employee_id bigint NOT NULL REFERENCES employees(id), agent text NOT NULL,
++ project text NOT NULL, title text NOT NULL, content_hash text NOT NULL, content text NOT NULL,
++ received_at timestamptz NOT NULL DEFAULT now(), UNIQUE(employee_id,agent,project,title,content_hash)
++);
++CREATE INDEX IF NOT EXISTS wm_desktop_exports_owner_id ON wm_desktop_exports(employee_id,id DESC);`
++
++var collectAgents = map[string]bool{"WorkBuddy": true, "Claude Code": true, "Cursor": true, "Codex": true, "豆包工作": true, "千问工作": true, "其他 Agent": true}
++
++func (s *Service) collectExport(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		Agent, Project, Title, Content string
++		Owner                          int64
++	}
++	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
++	d := json.NewDecoder(r.Body)
++	d.DisallowUnknownFields()
++	if err := d.Decode(&in); err != nil {
++		var tooLarge *http.MaxBytesError
++		if errors.As(err, &tooLarge) {
++			fail(w, 413, "记录超出上传大小")
++			return
++		}
++		fail(w, 400, "记录格式无效")
++		return
++	}
++	if d.Decode(new(any)) != io.EOF {
++		fail(w, 400, "记录格式无效")
++		return
++	}
++	owner := who(r).employee.ID
++	if in.Owner != owner {
++		fail(w, 409, "登录成员已变化，请重新确认同步")
++		return
++	}
++	validLabel := func(v string) bool {
++		return strings.TrimSpace(v) != "" && utf8.RuneCountInString(v) <= 256 && !strings.ContainsRune(v, 0)
++	}
++	if !collectAgents[in.Agent] || !validLabel(in.Project) || !validLabel(in.Title) || strings.TrimSpace(in.Content) == "" || strings.ContainsRune(in.Content, 0) {
++		fail(w, 400, "来源、项目、标题或正文无效")
++		return
++	}
++	if len(in.Content) > 1<<20 {
++		fail(w, 413, "正文超过 1 MiB，未上传")
++		return
++	}
++	hash := sha256.Sum256([]byte(in.Content))
++	sum := hex.EncodeToString(hash[:])
++	var id int64
++	err := s.Store.Pool.QueryRow(r.Context(), `INSERT INTO wm_desktop_exports(employee_id,agent,project,title,content_hash,content)
++	VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id`, owner, in.Agent, in.Project, in.Title, sum, in.Content).Scan(&id)
++	if errors.Is(err, pgx.ErrNoRows) {
++		err = s.Store.Pool.QueryRow(r.Context(), `SELECT id FROM wm_desktop_exports WHERE employee_id=$1 AND agent=$2 AND project=$3 AND title=$4 AND content_hash=$5`, owner, in.Agent, in.Project, in.Title, sum).Scan(&id)
++	}
++	if err != nil {
++		fail(w, 500, "保存失败，请稍后重试")
++		return
++	}
++	reply(w, 200, map[string]any{"id": id, "sha256": sum})
++}
++
++func (s *Service) myExports(w http.ResponseWriter, r *http.Request) {
++	if raw := r.URL.Query().Get("id"); raw != "" {
++		id, err := strconv.ParseInt(raw, 10, 64)
++		if err != nil || id < 1 {
++			fail(w, 400, "记录编号无效")
++			return
++		}
++		var content string
++		err = s.Store.Pool.QueryRow(r.Context(), "SELECT content FROM wm_desktop_exports WHERE id=$1 AND employee_id=$2", id, who(r).employee.ID).Scan(&content)
++		if errors.Is(err, pgx.ErrNoRows) {
++			fail(w, 404, "记录不存在")
++			return
++		}
++		if err != nil {
++			fail(w, 500, "读取失败")
++			return
++		}
++		reply(w, 200, map[string]any{"content": content})
++		return
++	}
++	q := r.URL.Query().Get("q")
++	if utf8.RuneCountInString(q) > 200 {
++		fail(w, 400, "搜索词过长")
++		return
++	}
++	before := int64(0)
++	if raw := r.URL.Query().Get("before"); raw != "" {
++		var err error
++		before, err = strconv.ParseInt(raw, 10, 64)
++		if err != nil || before < 1 {
++			fail(w, 400, "分页位置无效")
++			return
++		}
++	}
++	rows, err := s.Store.Pool.Query(r.Context(), `SELECT id,agent,project,title,received_at FROM wm_desktop_exports WHERE employee_id=$1 AND ($3::bigint=0 OR id<$3) AND ($2='' OR strpos(lower(concat_ws(' ',agent,project,title,content)),lower($2))>0) ORDER BY id DESC LIMIT 51`, who(r).employee.ID, q, before)
++	if err != nil {
++		fail(w, 500, "查询失败")
++		return
++	}
++	defer rows.Close()
++	type entry struct {
++		ID      int64     `json:"id"`
++		Agent   string    `json:"agent"`
++		Project string    `json:"project"`
++		Title   string    `json:"title"`
++		At      time.Time `json:"at"`
++	}
++	result := []entry{}
++	for rows.Next() {
++		var e entry
++		if rows.Scan(&e.ID, &e.Agent, &e.Project, &e.Title, &e.At) != nil {
++			fail(w, 500, "读取失败")
++			return
++		}
++		result = append(result, e)
++	}
++	if rows.Err() != nil {
++		fail(w, 500, "读取失败")
++		return
++	}
++	var next int64
++	if len(result) > 50 {
++		result = result[:50]
++		next = result[49].ID
++	}
++	reply(w, 200, map[string]any{"records": result, "next": next})
++}
+diff --git a/internal/wemanage/collect_test.go b/internal/wemanage/collect_test.go
+new file mode 100644
+index 0000000..4131dba
+--- /dev/null
++++ b/internal/wemanage/collect_test.go
+@@ -0,0 +1,105 @@
++package wemanage_test
++
++import (
++	"aiseat/internal/store"
++	"aiseat/internal/testutil"
++	"aiseat/internal/wemanage"
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"os"
++	"os/exec"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++)
++
++func TestDesktopExportReceipts(t *testing.T) {
++	u, _ := url.Parse(testutil.TestDBURL())
++	if u == nil || u.Hostname() != "127.0.0.1" || u.Path != "/wecollect_pilot_test" {
++		t.Skip("requires isolated local wecollect_pilot_test database")
++	}
++	ctx := context.Background()
++	st := store.New(testutil.NewDB(t))
++	if e := wemanage.Install(ctx, st); e != nil {
++		t.Fatal(e)
++	}
++	type member struct {
++		id           int64
++		cookie, csrf string
++	}
++	create := func(name string) member {
++		e, err := st.UpsertEmployeeByOpenID(ctx, store.Employee{FeishuOpenID: name, Name: name})
++		if err != nil {
++			t.Fatal(err)
++		}
++		c, k, err := st.CreateWebSession(ctx, e.ID, time.Hour)
++		if err != nil {
++			t.Fatal(err)
++		}
++		return member{e.ID, c, k}
++	}
++	a, b := create("pilot-a"), create("pilot-b")
++	srv := httptest.NewServer((&wemanage.Service{Store: st}).Handler())
++	defer srv.Close()
++	call := func(method string, user member, body string, code int) string {
++		req, _ := http.NewRequest(method, srv.URL+"/api/desktop-exports", strings.NewReader(body))
++		req.AddCookie(&http.Cookie{Name: "aiseat_sess", Value: user.cookie})
++		req.Header.Set("X-CSRF-Token", user.csrf)
++		resp, err := http.DefaultClient.Do(req)
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer resp.Body.Close()
++		v, _ := io.ReadAll(resp.Body)
++		if resp.StatusCode != code {
++			t.Fatalf("got %d wanted %d: %s", resp.StatusCode, code, v)
++		}
++		return string(v)
++	}
++	for _, agent := range []string{"WorkBuddy", "Claude Code", "Cursor", "Codex", "豆包工作", "千问工作"} {
++		body, _ := json.Marshal(map[string]any{"agent": agent, "project": "试用项目", "title": "记录.md", "content": "原文\n\n尾行", "owner": a.id})
++		first := call("POST", a, string(body), 200)
++		if first != call("POST", a, string(body), 200) {
++			t.Fatal("duplicate produced different receipt")
++		}
++		call("POST", b, string(body), 409)
++		call("POST", member{a.id, a.cookie, "wrong"}, string(body), 403)
++	}
++	call("GET", member{}, "", 401)
++	if strings.Contains(call("GET", b, "", 200), "记录.md") {
++		t.Fatal("cross-employee record")
++	}
++	var sampleID int64
++	if err := st.Pool.QueryRow(ctx, "select min(id) from wm_desktop_exports where employee_id=$1", a.id).Scan(&sampleID); err != nil {
++		t.Fatal(err)
++	}
++	req, _ := http.NewRequest("GET", srv.URL+"/api/desktop-exports?id="+strconv.FormatInt(sampleID, 10), nil)
++	req.AddCookie(&http.Cookie{Name: "aiseat_sess", Value: b.cookie})
++	denied, e := http.DefaultClient.Do(req)
++	if e != nil {
++		t.Fatal(e)
++	}
++	denied.Body.Close()
++	if denied.StatusCode != 404 {
++		t.Fatalf("another member can fetch content: %d", denied.StatusCode)
++	}
++	var count int
++	if err := st.Pool.QueryRow(ctx, "select count(*) from wm_desktop_exports where employee_id=$1 and content=$2", a.id, "原文\n\n尾行").Scan(&count); err != nil || count != 6 {
++		t.Fatalf("count=%d err=%v", count, err)
++	}
++	if os.Getenv("WECOLLECT_BROWSER_TEST") == "1" {
++		cmd := exec.Command("python3", "../wecollectui/testdata/browser.py")
++		cmd.Env = append(os.Environ(), "WECOLLECT_TEST_ORIGIN="+srv.URL, "WECOLLECT_TEST_COOKIE="+a.cookie)
++		if output, e := cmd.CombinedOutput(); e != nil {
++			t.Fatalf("%v: %s", e, output)
++		}
++		if err := st.Pool.QueryRow(ctx, "select count(*) from wm_desktop_exports where project='浏览器测试'").Scan(&count); err != nil || count != 1 {
++			t.Fatalf("browser inserted %d, %v", count, err)
++		}
++	}
++}
+diff --git a/internal/wemanage/service.go b/internal/wemanage/service.go
+index 8b81d78..e2206e4 100644
+--- a/internal/wemanage/service.go
++++ b/internal/wemanage/service.go
+@@ -2,6 +2,8 @@
+ package wemanage
+ 
+ import (
++	"aiseat/internal/wecollectui"
++
+ 	"context"
+ 	"embed"
+ 	"encoding/json"
+@@ -173,7 +175,7 @@ func Install(ctx context.Context, st *store.Store) error {
+   source_batch_ids BIGINT[] NOT NULL,input_snapshot JSONB NOT NULL,raw_output TEXT NOT NULL DEFAULT '',
+   model TEXT NOT NULL DEFAULT '',input_tokens BIGINT,output_tokens BIGINT,error TEXT NOT NULL DEFAULT '',
+   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),finished_at TIMESTAMPTZ
+- );`+assetSchema+managementSchema+curationSchema+curationScheduleSchema+costSettingsSchema+observabilitySchema)
++ );`+assetSchema+managementSchema+curationSchema+curationScheduleSchema+costSettingsSchema+observabilitySchema+collectSchema)
+ 	return err
+ }
+ 
+@@ -183,6 +185,8 @@ func (s *Service) Handler() http.Handler {
+ 	r.Group(func(r chi.Router) {
+ 		r.Use(s.auth)
+ 		r.Get("/api/session", s.session)
++		r.Get("/api/desktop-exports", s.myExports)
++		r.Post("/api/desktop-exports", s.collectExport)
+ 		r.Get("/api/review-tasks/{id}/history", s.reviewTaskHistory)
+ 		r.Get("/api/review-tasks", s.reviewTasks)
+ 		r.Post("/api/review-tasks", s.saveReviewTask)
+@@ -253,6 +257,7 @@ func (s *Service) Handler() http.Handler {
+ 		r.Post("/api/cases/{id}/edit", s.editCase)
+ 		r.Post("/api/cases/{id}/feedback", s.feedback)
+ 	})
++	r.Handle("/wecollect/*", http.StripPrefix("/wecollect/", wecollectui.WeCollectFiles()))
+ 	static, _ := fs.Sub(assets, "static")
+ 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+ 		w.Header().Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+@@ -284,7 +289,8 @@ func (s *Service) auth(next http.Handler) http.Handler {
+ 		}
+ 		emp, err := s.Store.GetEmployee(r.Context(), sess.EmployeeID)
+ 		memberRead := r.Method == http.MethodGet && (r.URL.Path == "/api/session" || r.URL.Path == "/api/shared/assets")
+-		if err != nil || (!emp.IsSuperAdmin && !memberRead && r.URL.Path != "/api/managed-projects" && r.URL.Path != "/api/review-tasks" && !(r.Method == http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/managed-projects/") || strings.HasPrefix(r.URL.Path, "/api/review-tasks/")) && strings.HasSuffix(r.URL.Path, "/history"))) || emp.Status != "active" {
++		memberExport := (r.Method == http.MethodPost || r.Method == http.MethodGet) && r.URL.Path == "/api/desktop-exports"
++		if err != nil || (!emp.IsSuperAdmin && !memberRead && !memberExport && r.URL.Path != "/api/managed-projects" && r.URL.Path != "/api/review-tasks" && !(r.Method == http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/managed-projects/") || strings.HasPrefix(r.URL.Path, "/api/review-tasks/")) && strings.HasSuffix(r.URL.Path, "/history"))) || emp.Status != "active" {
+ 			fail(w, 403, "仅限有效的超级管理员访问")
+ 			return
+ 		}
