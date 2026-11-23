@@ -4,7 +4,18 @@
 .record small{display:inline-block;margin-left:12px;font-variant-numeric:tabular-nums}
 #selection{margin-top:8px}section>details>summary strong{font-size:18px}
 
-#nativeGroup{min-width:0;max-width:100%;text-overflow:ellipsis}
+#nativeGroup,#usageFocus{min-width:0;max-width:100%;text-overflow:ellipsis}
 #nativeIssues{overflow-wrap:anywhere;max-height:10em;overflow:auto}
 .record label{display:inline-flex;max-width:100%;align-items:baseline;gap:4px}
 .record label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#startupScope{overflow-wrap:anywhere;min-width:0}
+#nativeIssues{white-space:pre-line}
+
+#usageRows{margin:0;padding-left:1.4em}
+
+.navState{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 16px;text-align:right;font-size:14px;overflow-wrap:anywhere}
+#transferDialog{width:min(640px,94vw);max-width:94vw}
+#transferDialog label{display:block;margin:12px 0 4px}
+#transferDialog input,#transferDialog textarea{width:100%;font:inherit}
+#transferDialog textarea{padding:8px 10px;border:1px solid #aebdb1;border-radius:7px;resize:vertical}

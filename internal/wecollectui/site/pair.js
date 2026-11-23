@@ -15,6 +15,7 @@ function disconnectPeer(message = '') {
   if (peer && !peer.closed) peer.postMessage({type:'end'}, companyURL.origin);
   clearTimeout(deadline);
   clearInterval(pairTimer);
+  archiveState('');
   peer = null; peerReady = false; pendingRecord = null;
   confirmed.clear(); tooLarge.clear();
   el('pairStatus').textContent = message;
@@ -55,6 +56,7 @@ function connectPeer() {
   el('pair').disabled = true;
   el('syncProject').disabled = true;
   el('unpair').hidden = false;
+  archiveState('等待确认');
   el('pairStatus').textContent = '等待公司工作台显示接收账号并确认。';
   deadline = setTimeout(() => disconnectPeer('未连接。请确认公司工作台已部署支持桌面同步的版本。'), 45000);
   pairTimer = setInterval(() => {
@@ -70,6 +72,7 @@ window.addEventListener('message', async event => {
     peer.postMessage({type:'scope', project:pairProject, agent:activeScope.agent, group:activeScope.group}, companyURL.origin);
   } else if (data.type === 'accepted') {
     peerReady = true;
+    archiveState('已开启 · ' + pairProject);
     offerRecords();
   } else if (data.type === 'ack' && pendingRecord?.id === data.id) {
     const record = pendingRecord;
@@ -101,6 +104,7 @@ function initReceiver() {
   const post = data => sender.postMessage(data, origin);
   let scope, member, active = false, busy = false, ended = false, aborter;
   function stop(reason) {
+    archiveState('');
     ended = true; active = false; aborter?.abort();
     el('allowPeer').disabled = true; el('stopPeer').hidden = true;
     el('peerStatus').textContent = reason; post({type:'stopped',reason});
@@ -148,6 +152,7 @@ function initReceiver() {
   });
   el('allowPeer').onclick = () => {
     if (!scope || !member || ended) return;
+    archiveState('正在接收 · ' + scope.project);
     active = true; aborter = new AbortController();
     el('allowPeer').disabled = true; el('stopPeer').hidden = false;
     el('peerStatus').textContent = '正在接收已确认工作区的会话。';

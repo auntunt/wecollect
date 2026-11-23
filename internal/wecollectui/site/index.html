@@ -1,21 +1,29 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#173f38"><title>WeCollect 工作记录</title><link rel="manifest" href="app.webmanifest"><link rel="stylesheet" href="style.css"></head>
-<body><main><nav><strong>WeCollect</strong><span id="account">本机工作台</span></nav><header><h1>我的 AI 工作记录</h1><p>查找工作会话，整理周报素材，按工作区归档。</p></header>
-<section id="native" hidden><h2>本机会话</h2>
-<p>自动查找 Claude Code、Codex、Cursor Agent 和 WorkBuddy。选择工作区后在本机读取，窗口打开期间会跟随更新。</p>
-<div class="actions"><label for="nativeGroup">读取工作区</label><select id="nativeGroup"><option value="">选择工作区</option></select><button id="refreshNative" class="alt">重新查找</button></div>
-<output id="nativeStatus" role="status"></output><output id="nativeIssues"></output>
+<body><main><nav><strong>WeCollect</strong><div class="navState"><span id="account">本机工作台</span><span id="archiveState">本窗口公司归档未开启</span></div></nav><header><h1>我的 AI 工作记录</h1><p>查找历史会话，换个 AI 继续工作。</p></header>
+<section id="native" hidden><h2>会话正文与归档</h2>
+<p>需要查看原文或归档到 WeManage 时，可在这里打开工作区。</p>
+<div class="actions"><label for="nativeGroup">预览工作区</label><select id="nativeGroup"><option value="">选择工作区</option></select><button id="refreshNative" class="alt">重新查找</button></div>
+<div class="actions"><button id="pinScope" class="alt" hidden>设为启动工作区</button><span id="startupScope"></span><button id="forgetScope" class="alt" hidden>取消启动工作区</button></div>
+<output id="startupError"></output><p id="nativeStatus"></p><div id="nativeIssues"></div>
 </section>
 <section id="manual"><h2>工作资料夹</h2><div class="form"><label>工具<select id="agent"><option>WorkBuddy</option><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>豆包工作</option><option>千问工作</option><option>其他 Agent</option></select></label><label>工作项目<input id="project" maxlength="100" placeholder="例如：客服知识库"></label><button id="choose">选择专用导出文件夹</button></div>
 <p id="format"></p><p>请选择只存放该工具、该项目非网关工作记录的文件夹。只读取第一层支持的文件，每份最多 1 MiB。走公司网关的记录已由网关归档。</p><output id="scope" aria-live="polite">尚未选择文件夹</output></section>
 <section>
   <div class="row"><h2>搜索与整理</h2><input id="search" type="search" aria-label="搜索工作记录" placeholder="搜索文件名或正文"></div>
-  <div class="actions"><label for="period">文件修改时间</label><select id="period"><option value="all">全部时间</option><option value="week">本周</option><option value="lastWeek">上周</option></select>
+  <div class="actions"><label for="period">文件修改时间</label><select id="period"><option value="all">全部时间</option><option value="today">今天</option><option value="week">本周</option><option value="lastWeek">上周</option></select>
     <button id="selectMatches" class="alt" disabled>勾选筛选结果</button><button id="clearPicks" class="alt" disabled>清空勾选</button></div>
   <div id="records"></div>
   <output id="selection"></output>
-  <div class="actions"><button id="weekly" disabled>导出周报素材</button><button id="handoff" class="alt" disabled>导出任务交接单</button><button id="copy" class="alt" disabled>复制勾选正文</button></div>
+  <div class="actions"><button id="transfer" disabled>换个 AI 继续</button><button id="daily" class="alt" disabled>导出日报素材</button><button id="weekly" disabled>导出周报素材</button><button id="handoff" class="alt" disabled>导出任务交接单</button><button id="copy" class="alt" disabled>复制勾选正文</button></div>
   <output id="exportStatus" role="status"></output>
+</section>
+<section id="overview" hidden>
+<h2>本地会话统计</h2>
+<div class="actions"><label for="usagePeriod">统计周期</label><select id="usagePeriod"><option value="today">今天</option><option value="week">本周</option><option value="lastWeek">上周</option></select>
+<label for="usageFocus">报告工作区</label><select id="usageFocus"><option value="">全部工作区</option></select>
+<button id="usageExport" disabled>导出统计日报</button></div>
+<p id="usageTotal"></p><ul id="usageRows"></ul>
 </section>
 <section>
   <details><summary><strong>WorkBuddy 签到提醒</strong></summary>
@@ -28,7 +36,13 @@
 <p>公司工作台将显示接收账号和范围。确认后会提交当前工作区已有、新增和更新的会话正文。</p>
 <div class="actions"><label for="syncProject">归档项目名</label><input id="syncProject" maxlength="100" placeholder="例如：客服知识库"><button id="pair">连接公司工作台</button><button id="unpair" class="alt" hidden>断开同步</button></div><output id="pairStatus" role="status"></output></section>
 <section id="archive"><div class="row"><h2>我的已归档记录</h2><input id="remoteQuery" maxlength="200" placeholder="跨工具搜索自己的归档" aria-label="搜索我的归档"><button class="alt" id="lookup">查询</button></div><output id="history" aria-live="polite"></output><button class="alt" hidden id="more">下一页</button></section>
+<dialog id="transferDialog" aria-labelledby="transferTitle">
+<h2 id="transferTitle">换个 AI 继续</h2>
+<label for="transferNext">下一步想做什么</label><input id="transferNext" placeholder="例如：根据已确认的需求整理验收标准">
+<label for="transferText">带到新对话的内容</label><textarea id="transferText" rows="9"></textarea>
+<div class="actions"><button id="transferCopy">复制续聊内容</button><button id="transferSave" class="alt">保存 Markdown</button><button id="transferClose" class="alt">关闭</button></div>
+<output id="transferStatus" role="status"></output></dialog>
 <dialog id="confirm"><h2>开启这个项目的同步？</h2><p id="disclosure"></p><p>之后每 20 秒检查一次文件夹。你可以随时暂停。已经存入公司的记录会保留。</p><button id="yes">确认开启</button> <button id="no" class="alt">取消</button></dialog>
 <section id="receiver" hidden><h2>桌面会话同步</h2><p id="peerScope"></p><output id="peerStatus" role="status"></output>
 <div class="actions"><button id="allowPeer" disabled>确认并开启同步</button><button id="stopPeer" class="alt" hidden>暂停同步</button><a id="peerLogin" hidden target="_blank" rel="noopener" href="/api/auth/feishu/login?next=%2Fwemanager%2Fwecollect%2F">登录公司工作台</a></div></section>
-</main><script src="exports.js"></script><script src="app.js"></script><script src="native.js"></script><script src="pair.js"></script></body></html>
+</main><script src="exports.js"></script><script src="app.js"></script><script src="usage.js"></script><script src="native.js"></script><script src="pair.js"></script></body></html>

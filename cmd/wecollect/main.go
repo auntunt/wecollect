@@ -63,8 +63,16 @@ func main() {
 	catalog := localsessions.New(home, os.Getenv("CODEX_HOME"), os.Getenv("CLAUDE_CONFIG_DIR"))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/native/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-WeCollect-Local")), []byte(key)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-WeCollect-Local")), []byte(key)) != 1 {
 			http.Error(w, "无法访问本机记录", http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == "/native/startup" {
+			serveStartup(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		catalog.ServeHTTP(w, r)
@@ -80,7 +88,8 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != host || (r.Method != "GET" && r.Method != "HEAD") {
+		startupWrite := r.Method == http.MethodPut && r.URL.Path == "/native/startup" && r.Header.Get("Origin") == "http://"+host
+		if r.Host != host || (r.Method != "GET" && r.Method != "HEAD" && !startupWrite) {
 			http.Error(w, "invalid request", 403)
 			return
 		}

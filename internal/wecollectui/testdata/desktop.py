@@ -23,6 +23,9 @@ try:
         page.goto(origin)
         page.evaluate("""() => {
           const sunday = new Date(2026, 0, 4, 23, 59);
+          const today = weekRange('today', sunday);
+          if (localDate(today.start) !== '2026-01-04' || localDate(today.end) !== '2026-01-05'
+              || today.start.getHours() !== 0 || today.end.getHours() !== 0) throw Error('day boundary');
           const last = weekRange('lastWeek', sunday);
           const week = weekRange('week', sunday);
           if (localDate(last.start) !== '2025-12-22' || localDate(week.start) !== '2025-12-29'
@@ -30,7 +33,7 @@ try:
           if (!reminderCalendar('09:30', sunday).includes('DTSTART:20260105T093000'))
             throw Error('next reminder');
           const monday = weekRange('week', new Date()).start.getTime();
-          const files = [new File(['本周任务\\n\\n保留尾行'], '本周.md', {lastModified:monday}),
+          const files = [new File(['本周任务\\n\\n保留尾行'], '本周.md', {lastModified:Date.now()}),
             new File(['旧记录'], '上周.txt', {lastModified:monday-1000})];
           window.showDirectoryPicker = async () => ({name:'导出', async *values() {
             for (const file of files) yield {name:file.name, kind:'file', getFile:async()=>file};
@@ -40,6 +43,8 @@ try:
         page.fill('#project', '桌面助手')
         page.click('#choose')
         expect(page.locator('.record')).to_have_count(2)
+        page.select_option('#period', 'today')
+        expect(page.locator('.record')).to_have_count(1)
         page.select_option('#period', 'week')
         page.click('#selectMatches')
         assert page.locator('#selection').inner_text() == '筛选结果 1 份 · 共勾选 1 份'
@@ -52,6 +57,23 @@ try:
                 page.click(button)
             return Path(event.value.path()).read_bytes().decode('utf-8')
 
+        page.click('#transfer')
+        original = page.input_value('#transferText')
+        assert '本周任务\n\n保留尾行' in original and '旧记录' not in original
+        page.fill('#transferNext', '整理验收标准')
+        page.fill('#transferText', original + '\n补充一项')
+        expected = '下一步：整理验收标准\n\n' + original + '\n补充一项'
+        page.evaluate("Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText:async t=>{window.copied=t}}})")
+        page.click('#transferCopy')
+        assert page.evaluate('window.copied') == expected
+        assert download('#transferSave') == expected
+        if os.getenv('WECOLLECT_TRANSFER_SCREENSHOT'):
+            page.screenshot(path=os.environ['WECOLLECT_TRANSFER_SCREENSHOT'])
+        page.click('#transferClose')
+        expect(page.locator('#transferText')).to_have_value('')
+        expect(page.locator('#archiveState')).to_contain_text('未开启')
+        daily = download('#daily')
+        assert '今日完成' in daily and '本周任务\n\n保留尾行' in daily and '旧记录' not in daily
         weekly = download('#weekly')
         assert '本周任务\n\n保留尾行' in weekly and '旧记录' not in weekly and '下周计划' in weekly
         page.click('#selectMatches')

@@ -45,7 +45,12 @@ function formats() {
   el('format').textContent = jsonl ? '接受 Markdown、TXT 或该工具的会话 JSONL。JSONL 只提取可见的提问和回复，跳过工具载荷、思考和附件。' : '接受 Markdown 或 TXT 工作记录。文件正文将原样预览和提交。';
   return jsonl;
 }
+function archiveState(text) {
+  el('archiveState').textContent = text ? '本窗口公司归档 · ' + text : '本窗口公司归档未开启';
+}
+
 function reset() {
+  archiveState('');
   revision++;
   controller?.abort();
   folder = undefined; activeMember = null; syncing = false;
@@ -65,13 +70,15 @@ function matchingRecords() {
 }
 
 function updateSelection(matches) {
-  for (const id of ['copy', 'weekly', 'handoff', 'clearPicks']) el(id).disabled = !picked.size;
+  for (const id of ['transfer', 'copy', 'daily', 'weekly', 'handoff', 'clearPicks']) el(id).disabled = !picked.size;
   el('selectMatches').disabled = !matches.some(record => !picked.has(record.title));
   el('selection').textContent = '筛选结果 ' + matches.length + ' 份 · 共勾选 ' + picked.size + ' 份';
 }
 
 function render() {
-  const container = el('records'); container.replaceChildren();
+  const container = el('records');
+  const expanded = new Set([...container.querySelectorAll('details[open]')].map(detail => detail.dataset.record));
+  container.replaceChildren();
   const matches = matchingRecords();
   for (const r of matches) {
     const row = document.createElement('div'); row.className = 'record';
@@ -85,6 +92,8 @@ function render() {
     const date = document.createElement('small');
     date.textContent = localDate(new Date(r.modified)); row.append(date);
     const detail = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
+    detail.dataset.record = r.id || r.title;
+    detail.open = expanded.has(detail.dataset.record);
     const archived = r.id ? r.archivedVersion === r.version : receipts.get(r.title)?.hash === r.hash;
     summary.textContent = archived ? '已归档 · 查看正文' : '本机预览';
     body.textContent = r.content; detail.append(summary,body); row.append(detail); container.append(row);
@@ -149,7 +158,7 @@ async function scan() {
   } catch(e) {if(rev===revision && e.name!=='AbortError') el('sync').textContent=e.message;}
   finally {scanning=false;}
 }
-function stopSync(){ syncing=false;activeMember=null;controller?.abort();revision++;el('toggle').textContent='开启自动同步';el('sync').textContent='已暂停';}
+function stopSync(){ archiveState(''); syncing=false;activeMember=null;controller?.abort();revision++;el('toggle').textContent='开启自动同步';el('sync').textContent='已暂停';}
 el('choose').onclick=async()=>{
   if(!el('project').value.trim()){el('scope').textContent='请先填写工作项目';el('project').focus();return;}
   if(!window.showDirectoryPicker){el('scope').textContent='请使用桌面版 Edge 或 Chrome，在本机或 HTTPS 地址打开。';return;}
@@ -163,7 +172,7 @@ el('selectMatches').onclick = () => {
   render();
 };
 el('clearPicks').onclick = () => { picked.clear(); render(); };
-for (const kind of ['weekly', 'handoff']) {
+for (const kind of ['daily', 'weekly', 'handoff']) {
   el(kind).onclick = () => {
     const selected = [...picked].map(title => records.get(title));
     const doc = exportDocument(kind, activeScope?.group || el('project').value.trim(), activeScope?.agent || el('agent').value, selected);
@@ -177,6 +186,37 @@ el('downloadReminder').onclick = () => {
   downloadText('WorkBuddy-每日签到.ics', reminderCalendar(input.value, new Date()), 'text/calendar;charset=utf-8');
   el('reminderStatus').textContent = '请打开下载的 .ics 文件，并在日历中确认导入每日提醒。';
 };
+el('transfer').onclick = () => {
+  const selected = [...picked].map(title => records.get(title))
+    .sort((a, b) => a.modified - b.modified || a.title.localeCompare(b.title));
+  if (!selected.length) return;
+  const project = activeScope?.group || el('project').value.trim();
+  const agent = activeScope?.agent || el('agent').value;
+  const parts = ['# ' + project, '来源工具：' + agent];
+  for (const record of selected) parts.push('## ' + record.title, record.content);
+  el('transferText').value = parts.join('\n\n');
+  el('transferNext').value = '';
+  el('transferStatus').textContent = '';
+  el('transferDialog').showModal();
+};
+function transferBody() {
+  const next = el('transferNext').value.trim();
+  return [next && '下一步：' + next, el('transferText').value].filter(Boolean).join('\n\n');
+}
+el('transferCopy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(transferBody());
+    el('transferStatus').textContent = '已复制，可粘贴到另一个 AI 的新对话。';
+  } catch {
+    el('transferStatus').textContent = '无法访问剪贴板，可以保存 Markdown。';
+  }
+};
+el('transferSave').onclick = () => downloadText('续聊-' + localDate(new Date()) + '.md', transferBody(), 'text/markdown;charset=utf-8');
+el('transferClose').onclick = () => el('transferDialog').close();
+el('transferDialog').onclose = () => {
+  el('transferNext').value = '';
+  el('transferText').value = '';
+};
 el('copy').onclick=async()=>{try{await navigator.clipboard.writeText([...picked].map(k=>k+'\n'+records.get(k).content).join('\n\n'));el('scope').textContent='已复制 '+picked.size+' 份完整正文';}catch{el('scope').textContent='剪贴板不可用，请展开记录后复制';}};
 el('toggle').onclick=async()=>{
   if(syncing){stopSync();return;}
@@ -188,7 +228,7 @@ el('toggle').onclick=async()=>{
     el('confirm').showModal();
   }catch(e){el('sync').textContent=e.message;}
 };
-el('yes').onclick=()=>{el('confirm').close();syncing=true;controller=new AbortController();el('toggle').textContent='暂停同步';el('sync').textContent='正在核对工作记录';scan();};
+el('yes').onclick=()=>{el('confirm').close();syncing=true;archiveState('已开启 · ' + folder.name);controller=new AbortController();el('toggle').textContent='暂停同步';el('sync').textContent='正在核对工作记录';scan();};
 el('no').onclick=()=>el('confirm').close();
 setInterval(scan,20000);reset();
 let before=0, previousQuery='';

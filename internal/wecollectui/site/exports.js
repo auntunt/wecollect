@@ -10,6 +10,11 @@ function weekRange(period, today) {
   if (period === 'all') return null;
   const start = new Date(today);
   start.setHours(0, 0, 0, 0);
+  if (period === 'today') {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return {start, end};
+  }
   const daysSinceMonday = (start.getDay() + 6) % 7;
   start.setDate(start.getDate() - daysSinceMonday - (period === 'lastWeek' ? 7 : 0));
   const end = new Date(start);
@@ -18,10 +23,12 @@ function weekRange(period, today) {
 }
 
 function exportDocument(kind, project, agent, selected) {
-  const weekly = kind === 'weekly';
-  const label = weekly ? '周报素材' : '任务交接单';
+  const [label, sections] = {
+    daily: ['日报素材', ['今日完成', '待解决问题', '下一步']],
+    weekly: ['周报素材', ['本周成果', '待解决问题', '下周计划']],
+    handoff: ['任务交接单', ['任务目标', '当前进展', '下一步与验收条件']]
+  }[kind];
   const entries = [...selected].sort((a, b) => a.modified - b.modified || a.title.localeCompare(b.title));
-  const sections = weekly ? ['本周成果', '待解决问题', '下周计划'] : ['任务目标', '当前进展', '下一步与验收条件'];
   const parts = ['# ' + project + ' · ' + label, '来源工具：' + agent, '记录数：' + entries.length];
   for (const section of sections) parts.push('## ' + section, '（待填写）');
   parts.push('## 工作记录原文');
