@@ -22,15 +22,20 @@ function weekRange(period, today) {
   return {start, end};
 }
 
-function exportDocument(kind, project, agent, selected) {
-  const [label, sections] = {
-    daily: ['日报素材', ['今日完成', '待解决问题', '下一步']],
-    weekly: ['周报素材', ['本周成果', '待解决问题', '下周计划']],
-    handoff: ['任务交接单', ['任务目标', '当前进展', '下一步与验收条件']]
-  }[kind];
+const reportFormats = {
+  daily: {label: '工作日报', sections: ['今日完成', '待解决问题', '下一步']},
+  weekly: {label: '工作周报', sections: ['本周成果', '待解决问题', '下周计划']},
+  handoff: {label: '任务交接单', sections: ['任务目标', '当前进展', '下一步与验收条件']}
+};
+
+function exportDocument(kind, project, agent, selected, notes) {
+  const {label, sections} = reportFormats[kind];
   const entries = [...selected].sort((a, b) => a.modified - b.modified || a.title.localeCompare(b.title));
   const parts = ['# ' + project + ' · ' + label, '来源工具：' + agent, '记录数：' + entries.length];
-  for (const section of sections) parts.push('## ' + section, '（待填写）');
+  for (const [index, section] of sections.entries()) {
+    const note = notes[index];
+    parts.push('## ' + section, note.trim() ? note : '（待填写）');
+  }
   parts.push('## 工作记录原文');
   for (const entry of entries) {
     parts.push('### ' + entry.title, '文件修改日期：' + localDate(new Date(entry.modified)), entry.content);

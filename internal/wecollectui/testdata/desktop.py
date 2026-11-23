@@ -72,12 +72,20 @@ try:
         page.click('#transferClose')
         expect(page.locator('#transferText')).to_have_value('')
         expect(page.locator('#archiveState')).to_contain_text('未开启')
-        daily = download('#daily')
+        def report(button, field, note):
+            page.click(button)
+            page.get_by_role('textbox', name=field, exact=True).fill(note)
+            return download('#reportDownload')
+
+        daily = report('#daily', '今日完成', '验收标准已确认\n待项目评审')
+        assert '## 今日完成\n\n验收标准已确认\n待项目评审' in daily
         assert '今日完成' in daily and '本周任务\n\n保留尾行' in daily and '旧记录' not in daily
-        weekly = download('#weekly')
+        weekly = report('#weekly', '下周计划', '发布试用版')
+        assert '## 下周计划\n\n发布试用版' in weekly and '验收标准已确认' not in weekly
         assert '本周任务\n\n保留尾行' in weekly and '旧记录' not in weekly and '下周计划' in weekly
         page.click('#selectMatches')
-        handoff = download('#handoff')
+        handoff = report('#handoff', '下一步与验收条件', '完成业务验收')
+        assert '## 下一步与验收条件\n\n完成业务验收' in handoff
         assert handoff.index('旧记录') < handoff.index('本周任务') and '下一步与验收条件' in handoff
         page.click('#clearPicks')
         assert page.is_disabled('#weekly') and page.is_disabled('#handoff')

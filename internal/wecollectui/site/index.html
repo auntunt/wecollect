@@ -15,7 +15,7 @@
     <button id="selectMatches" class="alt" disabled>勾选筛选结果</button><button id="clearPicks" class="alt" disabled>清空勾选</button></div>
   <div id="records"></div>
   <output id="selection"></output>
-  <div class="actions"><button id="transfer" disabled>换个 AI 继续</button><button id="daily" class="alt" disabled>导出日报素材</button><button id="weekly" disabled>导出周报素材</button><button id="handoff" class="alt" disabled>导出任务交接单</button><button id="copy" class="alt" disabled>复制勾选正文</button></div>
+  <div class="actions"><button id="transfer" disabled>换个 AI 继续</button><button id="daily" class="alt" disabled>写日报</button><button id="weekly" disabled>写周报</button><button id="handoff" class="alt" disabled>写交接单</button><button id="copy" class="alt" disabled>复制勾选正文</button></div>
   <output id="exportStatus" role="status"></output>
 </section>
 <section id="overview" hidden>
@@ -36,6 +36,11 @@
 <p>公司工作台将显示接收账号和范围。确认后会提交当前工作区已有、新增和更新的会话正文。</p>
 <div class="actions"><label for="syncProject">归档项目名</label><input id="syncProject" maxlength="100" placeholder="例如：客服知识库"><button id="pair">连接公司工作台</button><button id="unpair" class="alt" hidden>断开同步</button></div><output id="pairStatus" role="status"></output></section>
 <section id="archive"><div class="row"><h2>我的已归档记录</h2><input id="remoteQuery" maxlength="200" placeholder="跨工具搜索自己的归档" aria-label="搜索我的归档"><button class="alt" id="lookup">查询</button></div><output id="history" aria-live="polite"></output><button class="alt" hidden id="more">下一页</button></section>
+<dialog id="reportDialog" aria-labelledby="reportTitle">
+<h2 id="reportTitle"></h2><p id="reportSource"></p>
+<div id="reportFields"></div>
+<form method="dialog" class="actions"><button id="reportDownload" type="button">导出 Markdown</button><button class="alt">关闭</button></form>
+</dialog>
 <dialog id="transferDialog" aria-labelledby="transferTitle">
 <h2 id="transferTitle">换个 AI 继续</h2>
 <label for="transferNext">下一步想做什么</label><input id="transferNext" placeholder="例如：根据已确认的需求整理验收标准">

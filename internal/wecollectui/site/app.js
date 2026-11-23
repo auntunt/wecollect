@@ -172,14 +172,35 @@ el('selectMatches').onclick = () => {
   render();
 };
 el('clearPicks').onclick = () => { picked.clear(); render(); };
-for (const kind of ['daily', 'weekly', 'handoff']) {
+for (const [kind, format] of Object.entries(reportFormats)) {
   el(kind).onclick = () => {
     const selected = [...picked].map(title => records.get(title));
-    const doc = exportDocument(kind, activeScope?.group || el('project').value.trim(), activeScope?.agent || el('agent').value, selected);
-    downloadText(doc.name, doc.text, 'text/markdown;charset=utf-8');
-    el('exportStatus').textContent = doc.label + '已生成，包含 ' + selected.length + ' 份勾选记录。';
+    const project = activeScope?.group || el('project').value.trim();
+    const agent = activeScope?.agent || el('agent').value;
+    const fields = format.sections.map(section => {
+      const label = document.createElement('label');
+      const input = document.createElement('textarea');
+      input.rows = 2;
+      label.append(section, input);
+      return label;
+    });
+    el('reportTitle').textContent = format.label;
+    el('reportSource').textContent = project + ' · ' + agent + ' · 附 ' + selected.length + ' 份工作记录原文';
+    el('reportFields').replaceChildren(...fields);
+    el('reportDownload').onclick = () => {
+      const notes = [...el('reportFields').querySelectorAll('textarea')].map(input => input.value);
+      const doc = exportDocument(kind, project, agent, selected, notes);
+      downloadText(doc.name, doc.text, 'text/markdown;charset=utf-8');
+      el('exportStatus').textContent = doc.label + '已生成，包含 ' + selected.length + ' 份勾选记录。';
+      el('reportDialog').close();
+    };
+    el('reportDialog').showModal();
   };
 }
+el('reportDialog').onclose = () => {
+  el('reportFields').replaceChildren();
+  el('reportDownload').onclick = null;
+};
 el('downloadReminder').onclick = () => {
   const input = el('reminderTime');
   if (!input.reportValidity()) return;

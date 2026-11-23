@@ -15,7 +15,10 @@
 #usageRows{margin:0;padding-left:1.4em}
 
 .navState{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 16px;text-align:right;font-size:14px;overflow-wrap:anywhere}
-#transferDialog{width:min(640px,94vw);max-width:94vw}
-#transferDialog label{display:block;margin:12px 0 4px}
-#transferDialog input,#transferDialog textarea{width:100%;font:inherit}
-#transferDialog textarea{padding:8px 10px;border:1px solid #aebdb1;border-radius:7px;resize:vertical}
+#reportDialog,#transferDialog{width:min(640px,94vw);max-width:94vw}
+#reportDialog label,#transferDialog label{display:block;margin:12px 0 4px}
+#reportDialog textarea,#transferDialog input,#transferDialog textarea{width:100%;font:inherit}
+#reportDialog textarea,#transferDialog textarea{padding:8px 10px;border:1px solid #aebdb1;border-radius:7px;resize:vertical}
+
+#reportDialog textarea{display:block;margin-top:4px}
+#reportSource{overflow-wrap:anywhere}
